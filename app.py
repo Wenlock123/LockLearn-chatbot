@@ -3,7 +3,7 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 
-# ไม่กำหนด persist_directory เพื่อหลีกเลี่ยงปัญหา sqlite3 เวอร์ชันต่ำ
+# ไม่ระบุ persist_directory ใช้ in-memory เท่านั้น
 client = chromadb.Client()
 
 embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
@@ -15,8 +15,12 @@ except Exception:
 
 def generate_answer(question):
     question_embedding = embedding_model.encode(question).tolist()
-    results = collection.query(query_embeddings=[question_embedding], n_results=10)
+    results = collection.query(
+        query_embeddings=[question_embedding],
+        n_results=10,
+    )
     context = "\n".join(results['documents'][0]) if results['documents'] else ""
+
     prompt = (
         f"You are a friendly and empathetic life coach. "
         f"Use the following advice to help the user with their question.\n\n"
@@ -24,6 +28,7 @@ def generate_answer(question):
         f"User question: {question}\n"
         f"Answer briefly with 1-3 sentences, encouraging and human-like."
     )
+    
     API_URL = "https://api.together.xyz/api/v1/generate"
     API_KEY = "YOUR_API_KEY"
     headers = {"Authorization": f"Bearer {API_KEY}"}
@@ -40,6 +45,7 @@ def generate_answer(question):
         return "Error contacting the language model API."
 
 st.title("Life Coach Chatbot with RAG")
+
 user_question = st.text_input("Ask your question:")
 
 if user_question:
