@@ -20,8 +20,8 @@ from sentence_transformers import SentenceTransformer
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQA
-from langchain.llms import Together
 from langchain.schema import Document
+
 
 
 # โค้ดส่วนอื่นๆ ของแอป
