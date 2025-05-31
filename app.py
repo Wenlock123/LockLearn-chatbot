@@ -1,55 +1,50 @@
 import streamlit as st
 import chromadb
+from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
-import requests
 
-# ไม่ระบุ persist_directory
-client = chromadb.Client()
+# กำหนด path ที่เก็บฐานข้อมูล vector ของ chromadb
+CHROMA_PATH = "./chromadb_database_v2"
 
-embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
+# สร้าง client chromadb โดยระบุโฟลเดอร์ persist_directory
+client = chromadb.Client(
+    Settings(
+        persist_directory=CHROMA_PATH
+    )
+)
+
+st.title("LockLearn Chatbot")
+
+# โหลดโมเดล embedding (ตัวอย่างใช้ sentence-transformers)
+@st.cache_resource(show_spinner=False)
+def load_embedding_model():
+    return SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
+
+embedder = load_embedding_model()
+
+# สมมติชื่อ collection ที่ใช้เก็บข้อมูล vector
+COLLECTION_NAME = "recommendations"
 
 try:
-    collection = client.get_collection("recommendations")
-except Exception:
-    collection = client.create_collection("recommendations")
+    collection = client.get_collection(name=COLLECTION_NAME)
+except Exception as e:
+    st.error(f"ไม่พบ collection ชื่อ '{COLLECTION_NAME}' ในฐานข้อมูล: {e}")
+    st.stop()
 
-def generate_answer(question):
-    question_embedding = embedding_model.encode(question).tolist()
+# รับ input จากผู้ใช้
+query = st.text_input("ถามคำถามหรือขอคำแนะนำ:")
+
+if query:
+    # สร้าง embedding จากข้อความผู้ใช้
+    query_embedding = embedder.encode(query).tolist()
+
+    # ค้นหาในฐานข้อมูลโดยใช้ embedding ที่สร้าง
     results = collection.query(
-        query_embeddings=[question_embedding],
-        n_results=10,
+        query_embeddings=[query_embedding],
+        n_results=5  # จำนวนผลลัพธ์ที่ต้องการ
     )
-    context = "\n".join(results['documents'][0]) if results['documents'] else ""
 
-    prompt = (
-        f"You are a friendly and empathetic life coach. "
-        f"Use the following advice to help the user with their question.\n\n"
-        f"Advice:\n{context}\n\n"
-        f"User question: {question}\n"
-        f"Answer briefly with 1-3 sentences, encouraging and human-like."
-    )
-    
-    API_URL = "https://api.together.xyz/api/v1/generate"
-    API_KEY = "YOUR_API_KEY"
-    headers = {"Authorization": f"Bearer {API_KEY}"}
-    json_data = {
-        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-        "prompt": prompt,
-        "max_new_tokens": 200,
-        "temperature": 0.7,
-    }
-    response = requests.post(API_URL, headers=headers, json=json_data)
-    if response.status_code == 200:
-        return response.json().get("results", [{}])[0].get("text", "Sorry, I couldn't generate an answer.")
-    else:
-        return "Error contacting the language model API."
-
-st.title("Life Coach Chatbot with RAG")
-
-user_question = st.text_input("Ask your question:")
-
-if user_question:
-    with st.spinner("Thinking..."):
-        answer = generate_answer(user_question)
-    st.markdown("### Answer:")
-    st.write(answer)
+    # แสดงผลลัพธ์
+    st.write("คำแนะนำที่ใกล้เคียง:")
+    for i, doc in enumerate(results['documents'][0]):
+        st.markdown(f"**{i+1}.** {doc}")
