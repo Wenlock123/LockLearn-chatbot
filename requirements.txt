@@ -1,6 +1,6 @@
-sentence-transformers==2.2.2
+sentence-transformers
 protobuf==3.20.3
 streamlit
 chromadb
 requests
-pysqlite3-binary==0.5.3.post1 # If trying this app locally, comment out this line
+pysqlite3-binary==0.5.3.post1 
