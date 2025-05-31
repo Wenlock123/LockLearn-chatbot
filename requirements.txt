@@ -1,5 +1,5 @@
 streamlit
 chromadb
 requests
-pysqlite3
 protobuf
+# pysqlite3-binary==0.5.3.post1  # If trying this app locally, comment out this line
