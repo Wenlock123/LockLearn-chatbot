@@ -6,5 +6,6 @@ requests
 together
 sentence-transformers
 langchain
+langchain-community
 transformers
 torch
