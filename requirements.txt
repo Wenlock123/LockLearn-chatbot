@@ -1,7 +1,6 @@
-chromadb==0.3.23
-protobuf==3.20.3
 streamlit
-sentence-transformers
+chromadb==0.3.23
+sentence-transformers==2.2.2
 requests
-langchain
-torch==2.0.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
+langchain==0.0.222
+protobuf==3.20.3
