@@ -1,6 +1,7 @@
-protobuf==3.20.3
+streamlit
 chromadb
 sentence-transformers
-streamlit
 requests
 langchain
+protobuf==3.20.3
+torch
