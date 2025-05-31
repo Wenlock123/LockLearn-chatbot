@@ -8,12 +8,24 @@ Original file is located at
 """
 
 import streamlit as st
-from sentence_transformers import SentenceTransformer
-from langchain.vectorstores.chroma import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.schema import Document
 import os
+import requests
+import time
+import json
+
+import chromadb
 import together
+
+from sentence_transformers import SentenceTransformer
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.chains import RetrievalQA
+from langchain.llms import Together
+from langchain.schema import Document
+
+
+# โค้ดส่วนอื่นๆ ของแอป
+
 
 # โหลด embedding model
 embed_model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
