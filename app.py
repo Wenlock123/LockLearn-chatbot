@@ -9,7 +9,7 @@ Original file is located at
 
 import streamlit as st
 from sentence_transformers import SentenceTransformer
-from langchain.vectorstores import Chroma
+from langchain.vectorstores.chroma import Chroma
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 import os
