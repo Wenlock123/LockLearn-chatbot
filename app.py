@@ -77,17 +77,19 @@ st.markdown("Ask anything you'd like guidance or motivation about — in Thai or
 user_input = st.text_input("💬 What's on your mind?", placeholder="เช่น ผมรู้สึกท้อแท้...")
 
 if user_input:
-    # สร้าง embedding
-    query_embedding = embed_model.encode(user_input)
+    # สร้าง embedding แบบ list of list (สำคัญ)
+    query_embedding = [embed_model.encode(user_input).tolist()]
 
-    # ดึง context ที่เกี่ยวข้องจาก Vector DB
+    # ดึง context ที่เกี่ยวข้องจาก Vector DB โดยส่งเป็น list ของ vectors
     results = db.similarity_search_by_vector(query_embedding, k=10)
+
+    # รวมเนื้อหาที่ได้จากผลลัพธ์เป็นข้อความเดียวกัน
     context = "\n".join([doc.page_content for doc in results])
 
     # เตรียม prompt สำหรับ LLM
     prompt = PROMPT_TEMPLATE.format(question=user_input, context=context)
 
-    # ส่งเข้า LLaMA 4 Scout
+    # ส่ง prompt เข้า LLaMA 4 Scout ผ่าน Together API
     with st.spinner("🧘 Thinking like a life coach..."):
         llm_response = ask_llm(prompt)
 
