@@ -4,3 +4,4 @@ sentence-transformers==2.2.2
 torch
 requests
 pydantic==1.10.12
+huggingface_hub==0.12.1
