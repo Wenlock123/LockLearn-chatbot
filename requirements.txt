@@ -1,6 +1,7 @@
+streamlit
 langchain
 langchain-community
 chromadb
 sentence-transformers
 together-python
-streamlit
+torch==1.13.1
