@@ -1,42 +1,35 @@
 import streamlit as st
 import chromadb
-from sentence_transformers import SentenceTransformer
+from chromadb.config import Settings
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 import requests
 
-# กำหนดพาธเก็บฐานข้อมูล chromadb แบบถาวร
-DB_PATH = "./db"
+# ✅ ใช้ vector store ที่อยู่ในโฟลเดอร์นี้
+DB_PATH = "chromadb_database_v2"
 
-# สร้าง client chromadb พร้อมตั้งค่า persist_directory
-client = chromadb.Client(
-    chromadb.config.Settings(
-        persist_directory=DB_PATH
-    )
-)
+# ✅ เรียก PersistentClient พร้อมตั้ง path ให้ถูกต้อง
+client = chromadb.PersistentClient(path=DB_PATH)
 
-# โหลดโมเดล embedding (เช่น multilingual MPNet)
-embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
+# ✅ สร้าง embedding function โดยใช้โมเดล multilingual MPNet
+embedding_func = SentenceTransformerEmbeddingFunction(model_name="paraphrase-multilingual-mpnet-base-v2")
 
-# สร้างหรือเปิด collection สำหรับเก็บข้อความแนะนำ (recommendations)
+# ✅ สร้างหรือโหลด collection ที่มีชื่อว่า "recommendations"
 try:
-    collection = client.get_collection("recommendations")
-except Exception:
-    collection = client.create_collection("recommendations")
+    collection = client.get_collection("recommendations", embedding_function=embedding_func)
+except:
+    collection = client.create_collection("recommendations", embedding_function=embedding_func)
 
-# ฟังก์ชันค้นหา context ด้วย embedding แล้วเรียก LLM ผ่าน Together API
+# ✅ ฟังก์ชันหลักเพื่อ generate คำตอบ
 def generate_answer(question):
-    # สร้าง embedding ของคำถาม
-    question_embedding = embedding_model.encode(question).tolist()
+    question_embedding = embedding_func(question)
     
-    # ดึงข้อมูล top 10 ที่ใกล้เคียงที่สุด
     results = collection.query(
         query_embeddings=[question_embedding],
         n_results=10,
     )
     
-    # รวม context จากผลลัพธ์
-    context = "\n".join(results['documents'][0]) if results['documents'] else ""
-    
-    # สร้าง prompt สำหรับ LLM (Life coach)
+    context = "\n".join(results["documents"][0]) if results["documents"] else ""
+
     prompt = (
         f"You are a friendly and empathetic life coach. "
         f"Use the following advice to help the user with their question.\n\n"
@@ -44,10 +37,9 @@ def generate_answer(question):
         f"User question: {question}\n"
         f"Answer briefly with 1-3 sentences, encouraging and human-like."
     )
-    
-    # เรียก Together API (แก้ YOUR_API_KEY และ API_URL ให้ตรงกับของคุณ)
+
     API_URL = "https://api.together.xyz/api/v1/generate"
-    API_KEY = "YOUR_API_KEY"
+    API_KEY = "YOUR_API_KEY"  # 👈 เปลี่ยนเป็นของจริง
     headers = {"Authorization": f"Bearer {API_KEY}"}
     json_data = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -61,9 +53,8 @@ def generate_answer(question):
     else:
         return "Error contacting the language model API."
 
-# Streamlit UI
+# ✅ UI ด้วย Streamlit
 st.title("Life Coach Chatbot with RAG")
-
 user_question = st.text_input("Ask your question:")
 
 if user_question:
