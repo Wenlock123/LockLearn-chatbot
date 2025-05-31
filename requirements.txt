@@ -1,7 +1,7 @@
 streamlit
-chromadb
+chromadb==0.3.21
 sentence-transformers
 requests
 langchain
 protobuf==3.20.3
-torch
+torch==2.0.1+cpu
