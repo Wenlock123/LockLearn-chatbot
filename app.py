@@ -1,90 +1,104 @@
-# -*- coding: utf-8 -*-
 import streamlit as st
-import os
-import requests
-import json
-import shutil
-
-import chromadb
-import together
-
+import torch
 from sentence_transformers import SentenceTransformer
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.schema import Document
+import chromadb
+import os
+import json
+import requests
+from typing import List
 
-# -- ลบ cache เดิมเพื่อความมั่นใจ
-cache_dir = os.path.expanduser(
-    "~/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-mpnet-base-v2"
-)
-if os.path.exists(cache_dir):
-    shutil.rmtree(cache_dir)
+# ============================ CONFIG ============================
 
-# โหลด embedding model
-embed_model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
+TOGETHER_API_KEY = st.secrets.get("TOGETHER_API_KEY", os.getenv("TOGETHER_API_KEY"))
+CHROMA_PATH = "./chromadb_database_v2"  # เปลี่ยนตามที่ mount Google Drive แล้ว
+CHROMA_COLLECTION_NAME = "recommendations"
 
-# -- ใช้ path ที่ปลอดภัยข้ามแพลตฟอร์ม
-persist_dir = os.path.join(os.path.dirname(__file__), "chromadb_database_v2")
+EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+LLM_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
-# โหลด vector database โดยระบุชื่อ collection (ถ้าทราบ)
-db = Chroma(
-    persist_directory=persist_dir,
-    embedding_function=HuggingFaceEmbeddings(model_name="paraphrase-multilingual-mpnet-base-v2"),
-    collection_name="locklearn"  # <-- เปลี่ยนชื่อถ้า collection ของคุณไม่ใช่ "locklearn"
-)
+# ============================ INITIALIZE ============================
 
-# ตั้งค่า API Key สำหรับ Together
-together.api_key = os.getenv("TOGETHER_API_KEY")
+@st.cache_resource
+def load_model():
+    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    return model, device
 
-PROMPT_TEMPLATE = """
-You are a compassionate and wise life coach. Your goal is to respond kindly, with encouragement, and provide helpful advice in 1–3 sentences, tailored to the user's language and emotional tone.
+model, device = load_model()
 
-User question:
-"{question}"
+@st.cache_resource
+def load_chroma_collection():
+    client = chromadb.PersistentClient(path=CHROMA_PATH)
+    return client.get_collection(name=CHROMA_COLLECTION_NAME)
 
-Relevant background information:
+collection = load_chroma_collection()
+
+# ============================ FUNCTION ============================
+
+def embed_text(text: str):
+    embedding = model.encode(text, convert_to_tensor=True, device=device)
+    return embedding.cpu().numpy().tolist()
+
+def retrieve_docs(embedding: List[float], top_k=5):
+    results = collection.query(query_embeddings=[embedding], n_results=top_k)
+    return results["documents"][0] if results["documents"] else []
+
+def generate_answer(prompt: str):
+    url = "https://api.together.xyz/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {TOGETHER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a helpful and encouraging Thai education assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 512,
+        "temperature": 0.7,
+    }
+
+    res = requests.post(url, headers=headers, json=payload)
+    res.raise_for_status()
+    return res.json()["choices"][0]["message"]["content"]
+
+def build_prompt(question: str, docs: List[str]):
+    context = "\n\n".join(docs)
+    return f"""คำถามของผู้ใช้: {question}
+
+คำแนะนำที่เกี่ยวข้อง:
 {context}
 
-Answer in the same language as the user's question (Thai or English).
-"""
+โปรดใช้ข้อมูลข้างต้นเพื่อตอบคำถามของผู้ใช้ พร้อมให้กำลังใจ และคำแนะนำที่เหมาะสม"""
 
-# ถาม LLaMA 4 Scout
-def ask_llm(prompt):
-    response = together.Complete.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
-        prompt=prompt,
-        max_tokens=300,
-        temperature=0.7,
-        top_p=0.9,
-        repetition_penalty=1.1,
-        stop=["</s>"]
-    )
-    return response["output"]["choices"][0]["text"].strip()
+# ============================ UI ============================
 
-# Streamlit UI
-st.title("🧠 LockLearn - Your Life Coach Chatbot")
-st.markdown("Ask anything you'd like guidance or motivation about — in Thai or English!")
+st.set_page_config(page_title="LockLearn AI Chatbot", page_icon="💬")
+st.title("💬 LockLearn Chatbot")
+st.markdown("ถามคำถามของคุณเกี่ยวกับการเรียน หรือการพัฒนาตนเองได้เลย!")
 
-user_input = st.text_input("💬 What's on your mind?", placeholder="เช่น ผมรู้สึกท้อแท้...")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+user_input = st.chat_input("ถามคำถามเกี่ยวกับการเรียน หรือการพัฒนาตนเองได้เลย...")
 
 if user_input:
-    try:
-        # สร้าง embedding
-        query_embedding = embed_model.encode(user_input)
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-        # ดึง context
-        results = db.similarity_search_by_vector([query_embedding], k=10)
-        context = "\n".join([doc.page_content for doc in results])
+    with st.chat_message("assistant"):
+        with st.spinner("กำลังหาคำแนะนำ..."):
+            embedding = embed_text(user_input)
+            docs = retrieve_docs(embedding)
+            prompt = build_prompt(user_input, docs)
+            response = generate_answer(prompt)
+            st.markdown(response)
 
-        # เตรียม prompt
-        prompt = PROMPT_TEMPLATE.format(question=user_input, context=context)
-
-        # ส่งเข้า LLM
-        with st.spinner("🧘 Thinking like a life coach..."):
-            llm_response = ask_llm(prompt)
-
-        st.markdown("### 🧭 Life Coach's Advice:")
-        st.success(llm_response)
-
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
+    st.session_state.messages.append({"role": "assistant", "content": response})
