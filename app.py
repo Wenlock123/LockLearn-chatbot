@@ -24,6 +24,7 @@ st.write("LangChain version:", langchain.__version__)
 st.write("ChromaDB version:", chromadb.__version__)
 st.write("Python version:", sys.version)
 
+
 # โหลด embedding model
 embed_model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
 
