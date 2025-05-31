@@ -1,89 +1,83 @@
 import streamlit as st
-from sentence_transformers import SentenceTransformer
 import chromadb
+from sentence_transformers import SentenceTransformer
 import requests
+import os
 
-# --- ตั้งค่า Together API สำหรับ LLaMA 4 Scout ---
-TOGETHER_API_URL = "https://api.together.xyz/v0/models/meta-llama/llama-4-scout-17b-16e-instruct/generate"
-TOGETHER_API_KEY = st.secrets["together_api_key"]  # แนะนำเก็บ key ใน Streamlit secrets
-
-# --- โหลด Embedding Model ---
-@st.cache_resource
+# โหลดโมเดล embed
+@st.cache_resource(show_spinner=True)
 def load_embedding_model():
     return SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
 
-embedding_model = load_embedding_model()
+model = load_embedding_model()
 
-# --- เชื่อมต่อกับ ChromaDB ---
-@st.cache_resource
-def connect_chromadb():
-    db_path = './chromadb_database_v2'  # ปรับ path ให้ถูกต้อง
-    client = chromadb.PersistentClient(path=db_path)
-    collection = client.get_collection(name="recommendations")
-    return collection
+# เชื่อมกับ ChromaDB (แก้ path ให้ตรงกับของคุณ)
+DB_PATH = '/content/drive/MyDrive/LockLearn/chromadb_database_v2'  # เปลี่ยนตามจริง
+client = chromadb.PersistentClient(path=DB_PATH)
+collection = client.get_collection(name="recommendations")
 
-collection = connect_chromadb()
-
-# --- ฟังก์ชันค้นหา recommendations ---
-def retrieve_recommendations(question_embedding, top_k=10):
+# ฟังก์ชันดึงคำแนะนำใกล้เคียงจาก embedding
+def retrieve_recommendations(question_embedding, top_k=3):
     results = collection.query(
         query_embeddings=[question_embedding],
-        n_results=top_k
+        n_results=top_k,
+        include=['documents']  # ให้ดึงเอกสารที่เป็นคำแนะนำ
     )
-    if results['documents']:
-        return results['documents'][0]  # รายการคำแนะนำ 10 ชิ้น
+    if results and results['documents']:
+        return results['documents'][0]
     return []
 
-# --- ฟังก์ชันเรียก LLM เพื่อ generate response ---
-def call_llm_with_context(question, retrieved_texts):
-    # รวม context เป็น prompt ภาษาอังกฤษแนว Life Coach
-    context = "\n".join([f"- {rec}" for rec in retrieved_texts])
+# ฟังก์ชันเรียก LLM (ตัวอย่าง: Together API)
+def call_llm(prompt: str) -> str:
+    api_key = os.getenv("TOGETHER_API_KEY")  # ใส่ API key ใน env vars
+    if not api_key:
+        return "Error: API key not set."
+    
+    url = "https://api.together.xyz/v3/llm/meta-llama/llama-4-scout-17b-16e-instruct/generate"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "prompt": prompt,
+        "max_new_tokens": 256,
+        "temperature": 0.7,
+        "stop": ["\n\n"]
+    }
+    resp = requests.post(url, json=data, headers=headers)
+    if resp.status_code == 200:
+        return resp.json().get("results", [{}])[0].get("text", "No response")
+    else:
+        return f"Error from LLM API: {resp.status_code} {resp.text}"
+
+# UI
+st.title("LockLearn Life Coach Chatbot")
+
+user_question = st.text_input("ถามอะไรมาได้เลย:")
+
+if user_question:
+    # สร้าง embedding คำถาม
+    question_embedding = model.encode(user_question).tolist()
+
+    # ดึงคำแนะนำจาก ChromaDB
+    recs = retrieve_recommendations(question_embedding, top_k=3)
+
+    if recs:
+        context = "\n".join(f"- {r}" for r in recs)
+    else:
+        context = "No relevant advice found."
+
+    # สร้าง prompt สำหรับ LLM
     prompt = (
         f"You are a friendly and empathetic life coach. "
         f"Use the following advice to help the user with their question.\n\n"
         f"Advice:\n{context}\n\n"
-        f"User question: {question}\n"
+        f"User question: {user_question}\n"
         f"Answer briefly with 1-3 sentences, encouraging and human-like."
     )
-    headers = {
-        "Authorization": f"Bearer {TOGETHER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    json_data = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 256, "do_sample": True, "top_p": 0.95, "temperature": 0.7}
-    }
-    response = requests.post(TOGETHER_API_URL, headers=headers, json=json_data)
-    response.raise_for_status()
-    data = response.json()
-    return data.get("results", [{}])[0].get("text", "").strip()
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="LockLearn Life Coach Chatbot", page_icon="💬")
-st.title("💬 LockLearn Life Coach Chatbot")
+    # เรียก LLM เพื่อสร้างคำตอบ
+    answer = call_llm(prompt)
 
-if "history" not in st.session_state:
-    st.session_state.history = []
-
-# Input text box
-user_input = st.text_input("Ask me anything about life coaching:")
-
-if user_input:
-    with st.spinner("Thinking..."):
-        # 1. Embed user input
-        question_embedding = embedding_model.encode(user_input).tolist()
-
-        # 2. Retrieve top 10 recommendations
-        retrieved_docs = retrieve_recommendations(question_embedding, top_k=10)
-
-        # 3. Generate answer from LLM
-        answer = call_llm_with_context(user_input, retrieved_docs)
-
-        # 4. Update chat history
-        st.session_state.history.append({"user": user_input, "bot": answer})
-
-# Display chat history like ChatGPT style
-for chat in st.session_state.history:
-    st.markdown(f"**You:** {chat['user']}")
-    st.markdown(f"**Life Coach:** {chat['bot']}")
-
+    st.markdown("### คำแนะนำจากระบบ:")
+    st.write(answer)
