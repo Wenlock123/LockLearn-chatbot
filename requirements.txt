@@ -4,4 +4,3 @@ streamlit
 chromadb
 requests
 pysqlite3-binary==0.5.3.post1  # ถ้ารันบน Streamlit Cloud
-sentence-transformers==2.2.2
