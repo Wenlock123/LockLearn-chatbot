@@ -1,7 +1,4 @@
 streamlit
-chromadb==0.3.23
-sentence-transformers==2.2.2
+chromadb>=0.3.21
+sentence-transformers
 torch
-requests
-pydantic==1.10.12
-huggingface_hub==0.12.1
