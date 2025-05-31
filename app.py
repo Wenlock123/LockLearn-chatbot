@@ -1,104 +1,72 @@
 import streamlit as st
-import torch
-from sentence_transformers import SentenceTransformer
 import chromadb
-import os
-import json
-import requests
-from typing import List
+from sentence_transformers import SentenceTransformer
+import torch
+import numpy as np
 
-# ============================ CONFIG ============================
-
-TOGETHER_API_KEY = st.secrets.get("TOGETHER_API_KEY", os.getenv("TOGETHER_API_KEY"))
-CHROMA_PATH = "./chromadb_database_v2"  # เปลี่ยนตามที่ mount Google Drive แล้ว
-CHROMA_COLLECTION_NAME = "recommendations"
-
-EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-LLM_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
-
-# ============================ INITIALIZE ============================
-
+# ตั้งค่า Model (โหลดครั้งเดียว)
 @st.cache_resource
 def load_model():
-    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    return model, device
+    model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+    model.eval()
+    return model
 
-model, device = load_model()
-
+# โหลด Chroma DB (In-Memory) และเตรียม Collection
 @st.cache_resource
 def load_chroma_collection():
-    client = chromadb.PersistentClient(path=CHROMA_PATH)
-    return client.get_collection(name=CHROMA_COLLECTION_NAME)
+    client = chromadb.Client()
+    # สร้าง collection ใหม่ถ้ายังไม่มี
+    try:
+        collection = client.get_collection(name="recommendations")
+    except:
+        collection = client.create_collection(name="recommendations")
+    return collection
 
+# ฟังก์ชันแปลงข้อความเป็น embedding
+def embed_text(text, model):
+    embedding = model.encode([text], convert_to_tensor=True, device="cpu")
+    return embedding[0].cpu().numpy()
+
+# ฟังก์ชันดึงคำแนะนำโดยใช้ similarity search
+def retrieve_recommendations(collection, question_embedding, top_k=3):
+    results = collection.query(
+        query_embeddings=[question_embedding],
+        n_results=top_k
+    )
+    # results['documents'] คือ list ของ list (batch) แต่เราใช้ batch=1
+    if results['documents'] and len(results['documents'][0]) > 0:
+        return results['documents'][0]
+    return ["ไม่มีคำแนะนำที่ใกล้เคียง"]
+
+# ฟังก์ชันสำหรับเก็บ log แชท (history) ไว้บน session state
+def init_session_state():
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+st.title("💬 LockLearn Chatbot - RAG with Chroma DB")
+
+init_session_state()
+
+model = load_model()
 collection = load_chroma_collection()
 
-# ============================ FUNCTION ============================
+# UI: กล่องข้อความถาม
+query = st.text_input("ถามคำถามของคุณที่นี่:")
 
-def embed_text(text: str):
-    embedding = model.encode(text, convert_to_tensor=True, device=device)
-    return embedding.cpu().numpy().tolist()
+if query:
+    # แปลงคำถามเป็น embedding
+    query_emb = embed_text(query, model)
+    
+    # ดึงคำแนะนำ
+    recs = retrieve_recommendations(collection, query_emb, top_k=5)
 
-def retrieve_docs(embedding: List[float], top_k=5):
-    results = collection.query(query_embeddings=[embedding], n_results=top_k)
-    return results["documents"][0] if results["documents"] else []
+    # เก็บลง history
+    st.session_state.history.append({"user": query, "bot": recs})
 
-def generate_answer(prompt: str):
-    url = "https://api.together.xyz/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {TOGETHER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": LLM_MODEL,
-        "messages": [
-            {"role": "system", "content": "You are a helpful and encouraging Thai education assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 512,
-        "temperature": 0.7,
-    }
-
-    res = requests.post(url, headers=headers, json=payload)
-    res.raise_for_status()
-    return res.json()["choices"][0]["message"]["content"]
-
-def build_prompt(question: str, docs: List[str]):
-    context = "\n\n".join(docs)
-    return f"""คำถามของผู้ใช้: {question}
-
-คำแนะนำที่เกี่ยวข้อง:
-{context}
-
-โปรดใช้ข้อมูลข้างต้นเพื่อตอบคำถามของผู้ใช้ พร้อมให้กำลังใจ และคำแนะนำที่เหมาะสม"""
-
-# ============================ UI ============================
-
-st.set_page_config(page_title="LockLearn AI Chatbot", page_icon="💬")
-st.title("💬 LockLearn Chatbot")
-st.markdown("ถามคำถามของคุณเกี่ยวกับการเรียน หรือการพัฒนาตนเองได้เลย!")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-user_input = st.chat_input("ถามคำถามเกี่ยวกับการเรียน หรือการพัฒนาตนเองได้เลย...")
-
-if user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    with st.chat_message("assistant"):
-        with st.spinner("กำลังหาคำแนะนำ..."):
-            embedding = embed_text(user_input)
-            docs = retrieve_docs(embedding)
-            prompt = build_prompt(user_input, docs)
-            response = generate_answer(prompt)
-            st.markdown(response)
-
-    st.session_state.messages.append({"role": "assistant", "content": response})
+# แสดงประวัติแชท (user และ bot)
+for chat in st.session_state.history[::-1]:  # แสดงย้อนหลังล่าสุดบน
+    st.markdown(f"**คุณ:** {chat['user']}")
+    st.markdown(f"**LockLearn Bot:**")
+    for idx, rec in enumerate(chat['bot'], 1):
+        st.markdown(f"{idx}. {rec}")
+    st.markdown("---")
