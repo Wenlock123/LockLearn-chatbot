@@ -1,5 +1,5 @@
 streamlit
-langchain>=0.0.198
+langchain==0.0.232
 chromadb
 together
 sentence-transformers
