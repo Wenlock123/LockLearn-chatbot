@@ -1,7 +1,5 @@
 streamlit
-sentence-transformers
-langchain
+langchain>=0.0.198
 chromadb
 together
-transformers
-torch
+sentence-transformers
