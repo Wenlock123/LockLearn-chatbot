@@ -1,8 +1,7 @@
 streamlit
 chromadb
-sentence-transformers
 requests
-pysqlite3-binary==0.5.3.post1
-protobuf==3.20.3
+sentence-transformers
 torch
 transformers
+pysqlite3-binary==0.5.3.post1  # If trying this app locally, comment out this line
