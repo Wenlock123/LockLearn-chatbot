@@ -1,30 +1,78 @@
+# ✅ TODO: If trying this app locally, comment out these 3 lines
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import streamlit as st
 import chromadb
+from sentence_transformers import SentenceTransformer
+import requests
 
-CHROMA_PATH = "./chromadb_database_v2"  # เปลี่ยนเป็น path ที่เก็บฐานข้อมูลของคุณใน repo
+# ✅ Load embedding model
+@st.cache_resource
+def load_embedder():
+    return SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
 
-def test_persistent_client():
-    try:
-        client = chromadb.PersistentClient(path=CHROMA_PATH)
-        st.success("เชื่อมต่อ PersistentClient สำเร็จ")
+embedder = load_embedder()
 
-        collections = client.list_collections()
-        st.write(f"Collections ที่พบ: {[c.name for c in collections]}")
+# ✅ Connect to ChromaDB
+client = chromadb.PersistentClient(path="chromadb_database_v2")
+collection = client.get_collection(name="recommendations")
 
-        collection_name = "locklearn_recommendations"
-        if collection_name in [c.name for c in collections]:
-            collection = client.get_collection(collection_name)
-            query_text = ["test query"]
-            results = collection.query(query_texts=query_text, n_results=3)
-            st.write("ผลลัพธ์ query:")
-            st.write(results)
-        else:
-            st.warning(f"Collection '{collection_name}' ไม่พบในฐานข้อมูล")
+# ✅ Function to get embedding
+def get_embedding(text):
+    return embedder.encode(text).tolist()
 
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาด: {e}")
+# ✅ RAG function to retrieve top K recommendations
+def retrieve_recommendations(question, top_k=10):
+    embedding = get_embedding(question)
+    results = collection.query(query_embeddings=[embedding], n_results=top_k)
+    documents = results['documents'][0] if results['documents'] else []
+    return documents
 
-st.title("Test ChromaDB PersistentClient in Streamlit Cloud")
+# ✅ LLM function (via Together API)
+def generate_answer_with_llm(question, recommendations):
+    prompt = f"""You are a life coach AI. Here's a user's question: "{question}"
 
-if st.button("ทดสอบเชื่อมต่อและ query ChromaDB"):
-    test_persistent_client()
+Based on the following recommendations:
+{chr(10).join(f"- {rec}" for rec in recommendations)}
+
+Give a personalized, encouraging, and helpful answer using the recommendations. Do not list them. Respond naturally.
+"""
+    response = requests.post(
+        "https://api.together.xyz/inference",
+        headers={
+            "Authorization": "Bearer YOUR_TOGETHER_API_KEY",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "prompt": prompt,
+            "max_tokens": 512,
+            "temperature": 0.7,
+        }
+    )
+    if response.status_code == 200:
+        return response.json()["output"]["choices"][0]["text"].strip()
+    else:
+        return f"❌ Failed to get response from LLM: {response.text}"
+
+# ✅ Streamlit UI
+st.set_page_config(page_title="LockLearn AI Chatbot", page_icon="🧠")
+st.title("🧠 LockLearn - Life Coaching Chatbot")
+
+user_question = st.text_input("💬 ถามคำถามเกี่ยวกับชีวิต การเรียน หรืออนาคตของคุณ:")
+
+if user_question:
+    with st.spinner("🔍 กำลังค้นหาคำแนะนำที่เกี่ยวข้อง..."):
+        recommendations = retrieve_recommendations(user_question)
+    
+    st.subheader("📚 คำแนะนำที่เกี่ยวข้อง")
+    for i, rec in enumerate(recommendations, 1):
+        st.markdown(f"{i}. {rec}")
+
+    with st.spinner("✍️ กำลังสร้างคำตอบโดย LLM..."):
+        final_answer = generate_answer_with_llm(user_question, recommendations)
+
+    st.subheader("🤖 คำตอบจาก LockLearn AI")
+    st.markdown(final_answer)
