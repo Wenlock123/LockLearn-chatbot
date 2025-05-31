@@ -1,5 +1,6 @@
+protobuf==3.20.3
+# ไลบรารีอื่น ๆ ที่คุณใช้ เช่น
 streamlit
 chromadb
 requests
-protobuf
-# pysqlite3-binary==0.5.3.post1  # If trying this app locally, comment out this line
+pysqlite3-binary==0.5.3.post1  # ถ้ารันบน Streamlit Cloud
