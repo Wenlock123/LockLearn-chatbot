@@ -1,50 +1,30 @@
 import streamlit as st
 import chromadb
-from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
 
-# กำหนด path ที่เก็บฐานข้อมูล vector ของ chromadb
-CHROMA_PATH = "./chromadb_database_v2"
+CHROMA_PATH = "./chromadb_database_v2"  # เปลี่ยนเป็น path ที่เก็บฐานข้อมูลของคุณใน repo
 
-# สร้าง client chromadb โดยระบุโฟลเดอร์ persist_directory
-client = chromadb.Client(
-    Settings(
-        persist_directory=CHROMA_PATH
-    )
-)
+def test_persistent_client():
+    try:
+        client = chromadb.PersistentClient(path=CHROMA_PATH)
+        st.success("เชื่อมต่อ PersistentClient สำเร็จ")
 
-st.title("LockLearn Chatbot")
+        collections = client.list_collections()
+        st.write(f"Collections ที่พบ: {[c.name for c in collections]}")
 
-# โหลดโมเดล embedding (ตัวอย่างใช้ sentence-transformers)
-@st.cache_resource(show_spinner=False)
-def load_embedding_model():
-    return SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
+        collection_name = "locklearn_recommendations"
+        if collection_name in [c.name for c in collections]:
+            collection = client.get_collection(collection_name)
+            query_text = ["test query"]
+            results = collection.query(query_texts=query_text, n_results=3)
+            st.write("ผลลัพธ์ query:")
+            st.write(results)
+        else:
+            st.warning(f"Collection '{collection_name}' ไม่พบในฐานข้อมูล")
 
-embedder = load_embedding_model()
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาด: {e}")
 
-# สมมติชื่อ collection ที่ใช้เก็บข้อมูล vector
-COLLECTION_NAME = "recommendations"
+st.title("Test ChromaDB PersistentClient in Streamlit Cloud")
 
-try:
-    collection = client.get_collection(name=COLLECTION_NAME)
-except Exception as e:
-    st.error(f"ไม่พบ collection ชื่อ '{COLLECTION_NAME}' ในฐานข้อมูล: {e}")
-    st.stop()
-
-# รับ input จากผู้ใช้
-query = st.text_input("ถามคำถามหรือขอคำแนะนำ:")
-
-if query:
-    # สร้าง embedding จากข้อความผู้ใช้
-    query_embedding = embedder.encode(query).tolist()
-
-    # ค้นหาในฐานข้อมูลโดยใช้ embedding ที่สร้าง
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=5  # จำนวนผลลัพธ์ที่ต้องการ
-    )
-
-    # แสดงผลลัพธ์
-    st.write("คำแนะนำที่ใกล้เคียง:")
-    for i, doc in enumerate(results['documents'][0]):
-        st.markdown(f"**{i+1}.** {doc}")
+if st.button("ทดสอบเชื่อมต่อและ query ChromaDB"):
+    test_persistent_client()
