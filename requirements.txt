@@ -1,5 +1,6 @@
-streamlit
-langchain==0.0.232
+langchain
+langchain-community
 chromadb
-together
 sentence-transformers
+together-python
+streamlit
