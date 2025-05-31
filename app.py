@@ -9,11 +9,11 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 
-# ต้องตั้ง set_page_config เป็นคำสั่งแรกสุดหลัง import streamlit
+# ตั้ง config หน้าต่าง app
 st.set_page_config(page_title="LockLearn lifecoach", page_icon="🧠")
 
 # โหลดฐานข้อมูล ChromaDB
-db_path = "./chromadb_database_v2"  # เปลี่ยน path ตามจริงในระบบคุณ
+db_path = "./chromadb_database_v2"  # เปลี่ยนตาม path จริง
 client = chromadb.PersistentClient(path=db_path)
 collection = client.get_collection(name="recommendations")
 
@@ -45,14 +45,19 @@ def query_llm_together_api(prompt, api_key):
             "top_p": 0.95,
         }
     }
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code == 200:
-        try:
-            return response.json()["output"]["choices"][0]["text"].strip()
-        except Exception as e:
-            return f"Error parsing LLM response: {e}"
-    else:
-        return f"❌ Failed to get response from LLM: {response.text}"
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()  # ถ้าไม่ 200 จะโยน exception
+        data = response.json()
+        return data["output"]["choices"][0]["text"].strip()
+    except requests.exceptions.HTTPError as http_err:
+        return f"❌ HTTP error occurred: {http_err} (URL: {url})"
+    except requests.exceptions.Timeout:
+        return "❌ Request timed out."
+    except requests.exceptions.RequestException as e:
+        return f"❌ Request error: {e}"
+    except Exception as e:
+        return f"❌ Unexpected error: {e}"
 
 # --- UI ---
 
@@ -64,19 +69,29 @@ if "TOGETHER_API_KEY" in st.secrets:
 else:
     api_key = st.text_input("Enter your Together API Key", type="password")
 
-# เก็บประวัติแชทใน session_state
+# สร้าง session state สำหรับเก็บข้อความคุย
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+# UI แสดง chat log
+for i, chat in enumerate(st.session_state.chat_history):
+    if chat["role"] == "user":
+        st.markdown(f"**You:** {chat['content']}")
+    else:
+        st.markdown(f"**Bot:** {chat['content']}")
+
+# ช่องกรอกข้อความ แบบ input text box อยู่ข้างล่าง พร้อมกด Enter ส่ง
 def submit():
     user_question = st.session_state.user_input.strip()
-    if not user_question or not api_key:
+    if user_question == "":
         return
-    # embedding
+    st.session_state.chat_history.append({"role": "user", "content": user_question})
+
+    # สร้าง embedding และดึงคำแนะนำ
     question_embedding = embedding_model.encode(user_question).tolist()
-    # ดึงคำแนะนำ
     recommendations = retrieve_recommendations(question_embedding, top_k=3)
-    # สร้าง prompt
+
+    # สร้าง prompt ให้ LLM
     prompt = f"User question: {user_question}\n\nRelevant recommendations:\n"
     if recommendations:
         for i, rec in enumerate(recommendations, 1):
@@ -84,43 +99,17 @@ def submit():
     else:
         prompt += "No relevant recommendations found.\n"
     prompt += "\nPlease answer the user question using the above recommendations with encouragement and advice."
-    # เรียก LLM
-    with st.spinner("Processing..."):
+
+    with st.spinner("Bot is thinking..."):
         answer = query_llm_together_api(prompt, api_key)
-    # เก็บแชท
-    st.session_state.chat_history.append({"user": user_question, "bot": answer})
-    # เคลียร์ input
+
+    st.session_state.chat_history.append({"role": "bot", "content": answer})
+
+    # เคลียร์ input text
     st.session_state.user_input = ""
 
-# ช่อง input fixed bottom, กด Enter ส่ง
-st.text_input(
-    label="Ask me something about learning, motivation, or self-improvement:",
-    key="user_input",
-    placeholder="Type your question and press Enter",
-    on_change=submit,
-)
+# input text box อยู่ข้างล่างสุด กด Enter ส่งข้อความ
+st.text_input("Type your question here and press Enter", key="user_input", on_change=submit)
 
-# แสดงแชทด้านบน
-for chat in st.session_state.chat_history:
-    st.markdown(f"**You:** {chat['user']}")
-    st.markdown(f"**Bot:** {chat['bot']}")
-    st.markdown("---")
-
-# CSS fix input แถบพิมพ์ติดล่าง + ป้องกัน content บัง input
-st.markdown("""
-<style>
-    .stTextInput > div {
-        position: fixed !important;
-        bottom: 0;
-        left: 0;
-        width: 100% !important;
-        background: white;
-        padding: 10px 20px;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-        z-index: 1000;
-    }
-    .block-container {
-        padding-bottom: 70px;
-    }
-</style>
-""", unsafe_allow_html=True)
+# scroll to bottom เพื่อให้แถบ input อยู่ล่างสุด (อาจใช้ st.markdown แบบบางครั้งช่วย)
+st.markdown("<style>div[data-testid='stVerticalBlock'] > div {max-height: 70vh; overflow-y: auto;}</style>", unsafe_allow_html=True)
