@@ -33,9 +33,17 @@ def query_llm_together_chat(prompt, api_key):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "meta-llama/Llama-4-Scout-17B-16E-Instruct",  # ✅ ชื่อที่ถูกต้อง
+        "model": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
         "messages": [
-            {"role": "system", "content": "You are a supportive and insightful learning coach."},
+            {
+                "role": "system",
+                "content": (
+                    "You are a warm, supportive, and practical life coach. "
+                    "When answering questions, keep your replies short and clear — no more than 1–3 sentences. "
+                    "Speak like a real human, not like a chatbot. "
+                    "Always end your reply with an encouraging message."
+                )
+            },
             {"role": "user", "content": prompt}
         ],
         "max_tokens": 512,
@@ -76,7 +84,7 @@ if st.button("Send") and user_input and api_key:
 
         prompt = f"User question: {user_input}\n\nRelevant recommendations:\n"
         prompt += "\n".join([f"{i+1}. {rec}" for i, rec in enumerate(recommendations)])
-        prompt += "\n\nPlease answer with encouragement and practical advice."
+        prompt += "\n\nAnswer as a helpful life coach."
 
         answer = query_llm_together_chat(prompt, api_key)
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
