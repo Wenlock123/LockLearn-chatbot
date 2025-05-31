@@ -1,7 +1,0 @@
-[server]
-headless = true
-port = 8501
-enableCORS = false
-
-[python]
-extra-index-url = "https://download.pytorch.org/whl/cpu"
