@@ -12,6 +12,7 @@ import os
 import requests
 import time
 import json
+import shutil  # เพิ่ม
 
 import chromadb
 import together
@@ -23,15 +24,22 @@ from langchain.chains import RetrievalQA
 from langchain.schema import Document
 
 
+# --- ลบ cache โมเดล SentenceTransformer เก่า เพื่อแก้ปัญหาไฟล์หาย ---
+cache_dir = os.path.expanduser(
+    "~/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-mpnet-base-v2"
+)
 
-# โค้ดส่วนอื่นๆ ของแอป
+if os.path.exists(cache_dir):
+    shutil.rmtree(cache_dir)  # ลบ cache โฟลเดอร์โมเดลเก่า
 
-
-# โหลด embedding model
+# โหลด embedding model ใหม่ (จะดาวน์โหลดไฟล์โมเดลทั้งหมดใหม่)
 embed_model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
 
 # โหลด vector database จากโฟลเดอร์
-db = Chroma(persist_directory="chromadb_database_v2", embedding_function=HuggingFaceEmbeddings(model_name="paraphrase-multilingual-mpnet-base-v2"))
+db = Chroma(
+    persist_directory="chromadb_database_v2",
+    embedding_function=HuggingFaceEmbeddings(model_name="paraphrase-multilingual-mpnet-base-v2")
+)
 
 # ตั้งค่า API Key สำหรับ Together
 together.api_key = os.getenv("TOGETHER_API_KEY")
