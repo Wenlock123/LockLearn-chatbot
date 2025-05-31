@@ -79,7 +79,6 @@ user_input = st.text_input("💬 What's on your mind?", placeholder="เช่�
 if user_input:
     # สร้าง embedding
     query_embedding = embed_model.encode(user_input)
-    query_embedding = [query_embedding.tolist()]  # แปลงเป็น list ของ list เพื่อให้ compatible
 
     # ดึง context ที่เกี่ยวข้องจาก Vector DB
     results = db.similarity_search_by_vector(query_embedding, k=10)
