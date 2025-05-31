@@ -1,6 +1,7 @@
 streamlit
-chromadb==0.3.23
-sentence-transformers
+chromadb==0.4.14
+sentence-transformers==2.2.2
 requests
 protobuf==3.20.3
 torch==2.0.1+cpu
+pydantic==1.10.13
