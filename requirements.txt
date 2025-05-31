@@ -2,6 +2,7 @@ streamlit
 chromadb==0.3.23
 sentence-transformers==2.2.2
 requests
+langchain==0.0.202
 protobuf==3.20.3
-huggingface_hub==0.13.4
-torch==1.13.1+cpu
+torch==2.0.1+cpu
+huggingface-hub==0.13.4
