@@ -1,41 +1,29 @@
 # app.py
 
-# --- แก้ปัญหา sqlite3 version สำหรับ Streamlit Cloud ---
-# TODO: ถ้ารันในเครื่อง localhost ให้ comment 3 บรรทัดนี้ออก
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
 import streamlit as st
 import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 
-# ต้องตั้ง set_page_config เป็นคำสั่งแรกสุดหลัง import streamlit
-st.set_page_config(page_title="LockLearn lifecoach", page_icon="🧠")
+# ตั้งค่า page config
+st.set_page_config(page_title="LockLearn AI Chatbot", page_icon="🧠")
 
 # โหลดฐานข้อมูล ChromaDB
-db_path = "./chromadb_database_v2"  # เปลี่ยน path ตามจริงในระบบคุณ
+db_path = "./chromadb_database_v2"
 client = chromadb.PersistentClient(path=db_path)
 collection = client.get_collection(name="recommendations")
 
 # โหลด embedding model
 embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
 
-# ฟังก์ชันดึงคำแนะนำ (RAG)
 def retrieve_recommendations(question_embedding, top_k=3):
-    results = collection.query(
-        query_embeddings=[question_embedding],
-        n_results=top_k
-    )
-    # results['documents'] เป็น list of list (เพราะรับ query หลายตัว)
-    # ดังนั้นดึงรายการแรกออก
+    results = collection.query(query_embeddings=[question_embedding], n_results=top_k)
     if results and 'documents' in results and len(results['documents']) > 0:
         return results['documents'][0]
     return []
 
-# ฟังก์ชันเรียกใช้ LLM ผ่าน Together API
 def query_llm_together_api(prompt, api_key):
+    # ตรวจสอบ API endpoint ล่าสุดของ Together.ai
     url = "https://api.together.xyz/inference/meta-llama/llama-4-scout-17b-16e-instruct"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -49,36 +37,50 @@ def query_llm_together_api(prompt, api_key):
             "top_p": 0.95,
         }
     }
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code == 200:
-        # ตรวจสอบ key ให้แน่ใจว่าโครงสร้าง response ถูกต้อง
-        try:
-            return response.json()["output"]["choices"][0]["text"].strip()
-        except Exception as e:
-            return f"Error parsing LLM response: {e}"
-    else:
-        return f"❌ Failed to get response from LLM: {response.text}"
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        json_resp = response.json()
+        # ตรวจสอบโครงสร้าง response จริง
+        # ตามเอกสาร Together API ปกติ output อยู่ใน json_resp['results'][0]['text'] หรือคล้ายกัน
+        if "results" in json_resp and len(json_resp["results"]) > 0:
+            return json_resp["results"][0].get("text", "").strip()
+        # fallback
+        elif "output" in json_resp and "choices" in json_resp["output"]:
+            return json_resp["output"]["choices"][0]["text"].strip()
+        else:
+            return f"❌ Unexpected response format: {json_resp}"
+    except requests.exceptions.RequestException as e:
+        return f"❌ Request error: {e}"
+    except Exception as e:
+        return f"❌ Parsing response error: {e}"
 
-# --- UI ---
+# --- UI design ---
 st.title("🧠 LockLearn AI Chatbot")
 
-# ดึง Together API key จาก secrets (แนะนำเก็บใน secrets.yaml แทนใส่ใน UI)
-if "TOGETHER_API_KEY" in st.secrets:
-    api_key = st.secrets["TOGETHER_API_KEY"]
-else:
+# ดึง api key จาก secrets หรือใส่เอง
+api_key = st.secrets.get("TOGETHER_API_KEY", None)
+if not api_key:
     api_key = st.text_input("Enter your Together API Key", type="password")
 
-user_question = st.text_area("Ask me something about learning, motivation, or self-improvement:")
+# ตัวแปร session state สำหรับเก็บประวัติแชท
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-if st.button("Ask") and api_key and user_question:
-    with st.spinner("Processing..."):
+# ช่องข้อความ input ที่อยู่ข้างล่าง
+def get_text():
+    return st.text_input("Type your question and press Enter", key="input_text")
+
+user_input = get_text()
+
+if user_input and api_key:
+    with st.spinner("Generating answer..."):
         # สร้าง embedding
-        question_embedding = embedding_model.encode(user_question).tolist()
+        question_embedding = embedding_model.encode(user_input).tolist()
         # ดึงคำแนะนำ
         recommendations = retrieve_recommendations(question_embedding, top_k=3)
-        
-        # สร้าง prompt ให้ LLM
-        prompt = f"User question: {user_question}\n\nRelevant recommendations:\n"
+
+        prompt = f"User question: {user_input}\n\nRelevant recommendations:\n"
         if recommendations:
             for i, rec in enumerate(recommendations, 1):
                 prompt += f"{i}. {rec}\n"
@@ -86,7 +88,26 @@ if st.button("Ask") and api_key and user_question:
             prompt += "No relevant recommendations found.\n"
         prompt += "\nPlease answer the user question using the above recommendations with encouragement and advice."
 
-        # เรียก LLM ผ่าน Together API
         answer = query_llm_together_api(prompt, api_key)
-        st.markdown("### 🤖 Answer:")
-        st.write(answer)
+
+        # บันทึกลง chat history
+        st.session_state.chat_history.append({"user": user_input, "bot": answer})
+
+    # Clear input field
+    st.session_state.input_text = ""
+
+# แสดงแชทย้อนหลัง
+for chat in st.session_state.chat_history:
+    st.markdown(f"**You:** {chat['user']}")
+    st.markdown(f"**Bot:** {chat['bot']}")
+
+# --- Style ให้อยู่ข้างล่าง ---
+st.markdown("""
+<style>
+    /* Fix input box อยู่ล่าง */
+    .stTextInput > div > div > input {
+        font-size: 16px;
+        padding: 12px;
+    }
+</style>
+""", unsafe_allow_html=True)
