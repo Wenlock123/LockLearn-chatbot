@@ -1,5 +1,7 @@
 # app.py
-# ต้องนำเข้า pysqlite3 แทน sqlite3 ก่อน import chromadb (เพื่อแก้ sqlite3 เวอร์ชันเก่าใน Streamlit Cloud)
+
+# --- แก้ปัญหา sqlite3 version สำหรับ Streamlit Cloud ---
+# TODO: ถ้ารันในเครื่อง localhost ให้ comment 3 บรรทัดนี้ออก
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -9,11 +11,11 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 
-# ต้องตั้ง set_page_config เป็นคำสั่งแรกสุด (หลัง import streamlit)
-st.set_page_config(page_title="LockLearn AI Chatbot", page_icon="🧠")
+# ต้องตั้ง set_page_config เป็นคำสั่งแรกสุดหลัง import streamlit
+st.set_page_config(page_title="LockLearn lifecoach", page_icon="🧠")
 
 # โหลดฐานข้อมูล ChromaDB
-db_path = "./chromadb_database_v2"  # หรือเปลี่ยนเป็น path จริงตาม repo ของคุณ
+db_path = "./chromadb_database_v2"  # เปลี่ยน path ตามจริงในระบบคุณ
 client = chromadb.PersistentClient(path=db_path)
 collection = client.get_collection(name="recommendations")
 
@@ -26,7 +28,9 @@ def retrieve_recommendations(question_embedding, top_k=3):
         query_embeddings=[question_embedding],
         n_results=top_k
     )
-    if results['documents']:
+    # results['documents'] เป็น list of list (เพราะรับ query หลายตัว)
+    # ดังนั้นดึงรายการแรกออก
+    if results and 'documents' in results and len(results['documents']) > 0:
         return results['documents'][0]
     return []
 
@@ -47,31 +51,42 @@ def query_llm_together_api(prompt, api_key):
     }
     response = requests.post(url, headers=headers, json=payload)
     if response.status_code == 200:
-        return response.json()["output"]["choices"][0]["text"].strip()
+        # ตรวจสอบ key ให้แน่ใจว่าโครงสร้าง response ถูกต้อง
+        try:
+            return response.json()["output"]["choices"][0]["text"].strip()
+        except Exception as e:
+            return f"Error parsing LLM response: {e}"
     else:
         return f"❌ Failed to get response from LLM: {response.text}"
 
-# Streamlit UI
+# --- UI ---
 st.title("🧠 LockLearn AI Chatbot")
 
-api_key = st.text_input("Enter your Together API Key", type="password")
+# ดึง Together API key จาก secrets (แนะนำเก็บใน secrets.yaml แทนใส่ใน UI)
+if "TOGETHER_API_KEY" in st.secrets:
+    api_key = st.secrets["TOGETHER_API_KEY"]
+else:
+    api_key = st.text_input("Enter your Together API Key", type="password")
+
 user_question = st.text_area("Ask me something about learning, motivation, or self-improvement:")
 
 if st.button("Ask") and api_key and user_question:
     with st.spinner("Processing..."):
-        # Embed user question
+        # สร้าง embedding
         question_embedding = embedding_model.encode(user_question).tolist()
-        # ดึงคำแนะนำที่ใกล้เคียง
+        # ดึงคำแนะนำ
         recommendations = retrieve_recommendations(question_embedding, top_k=3)
         
-        # สร้าง prompt สำหรับ LLM
+        # สร้าง prompt ให้ LLM
         prompt = f"User question: {user_question}\n\nRelevant recommendations:\n"
-        for i, rec in enumerate(recommendations, 1):
-            prompt += f"{i}. {rec}\n"
+        if recommendations:
+            for i, rec in enumerate(recommendations, 1):
+                prompt += f"{i}. {rec}\n"
+        else:
+            prompt += "No relevant recommendations found.\n"
         prompt += "\nPlease answer the user question using the above recommendations with encouragement and advice."
 
-        # เรียก LLM
+        # เรียก LLM ผ่าน Together API
         answer = query_llm_together_api(prompt, api_key)
         st.markdown("### 🤖 Answer:")
         st.write(answer)
-
