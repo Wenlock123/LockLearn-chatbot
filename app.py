@@ -3,7 +3,7 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 
-# ไม่ระบุ persist_directory ใช้ in-memory เท่านั้น
+# ไม่ระบุ persist_directory
 client = chromadb.Client()
 
 embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
