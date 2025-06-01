@@ -92,7 +92,7 @@ Respond in the **same language** as the user's question:
 - Thai if the question is in Thai.
 - English if the question is in English.
 
-Make your answer concise and natural, like a caring life coach giving motivation in just 2-3 sentences. Keep it positive and uplifting.
+Make your answer concise and natural, like a caring life coach giving motivation in just 1-3 sentences. Keep it positive and uplifting.
 """
 
             # เรียก LLM
