@@ -138,5 +138,5 @@ Keep the response concise (1–2 sentences), natural, and motivating.
             reply = query_llm_with_chat(prompt, api_key)
 
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar="🧘‍♀️"):
         st.markdown(reply)
