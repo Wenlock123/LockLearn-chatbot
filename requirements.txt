@@ -1,6 +1,9 @@
-sentence-transformers
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+sentence-transformers==2.2.2
 protobuf==3.20.3
 streamlit
 chromadb
 requests
-pysqlite3-binary==0.5.3.post1 
+pysqlite3-binary==0.5.3.post1
