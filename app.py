@@ -10,7 +10,7 @@ import requests
 import re
 
 # ✅ ตั้งค่าหน้า Streamlit
-st.set_page_config(page_title="LockLearn Lifecoach", page_icon="🧠", layout="centered")
+st.set_page_config(page_title="LockLearn Lifecoach", page_icon="💖", layout="centered")
 
 # ✅ โหลด ChromaDB
 db_path = "./chromadb_database_v2"
@@ -95,7 +95,7 @@ for entry in st.session_state.chat_history:
         st.markdown(entry["content"])
 
 # ✅ ช่องพิมพ์ข้อความด้านล่าง
-user_input = st.chat_input("Ask me anything about motivation, study, or self-growth...")
+user_input = st.chat_input("How can I support you today? Feel free to ask me anything")
 
 if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
