@@ -28,8 +28,6 @@ def retrieve_recommendations(question_embedding, top_k=3):
         query_embeddings=[question_embedding],
         n_results=top_k
     )
-    # results['documents'] เป็น list of list (เพราะรับ query หลายตัว)
-    # ดังนั้นดึงรายการแรกออก
     if results and 'documents' in results and len(results['documents']) > 0:
         return results['documents'][0]
     return []
@@ -51,7 +49,6 @@ def query_llm_together_api(prompt, api_key):
     }
     response = requests.post(url, headers=headers, json=payload)
     if response.status_code == 200:
-        # ตรวจสอบ key ให้แน่ใจว่าโครงสร้าง response ถูกต้อง
         try:
             return response.json()["output"]["choices"][0]["text"].strip()
         except Exception as e:
@@ -62,22 +59,19 @@ def query_llm_together_api(prompt, api_key):
 # --- UI ---
 st.title("🧠 LockLearn AI Chatbot")
 
-# ดึง Together API key จาก secrets (แนะนำเก็บใน secrets.yaml แทนใส่ใน UI)
-if "TOGETHER_API_KEY" in st.secrets:
-    api_key = st.secrets["TOGETHER_API_KEY"]
-else:
-    api_key = st.text_input("Enter your Together API Key", type="password")
+# ใช้ API key จาก secrets เท่านั้น (ปลอดภัยกว่า)
+api_key = st.secrets["TOGETHER_API_KEY"]
 
 user_question = st.text_area("Ask me something about learning, motivation, or self-improvement:")
 
-if st.button("Ask") and api_key and user_question:
+if st.button("Ask") and user_question:
     with st.spinner("Processing..."):
         # สร้าง embedding
         question_embedding = embedding_model.encode(user_question).tolist()
         # ดึงคำแนะนำ
         recommendations = retrieve_recommendations(question_embedding, top_k=3)
-        
-        # สร้าง prompt ให้ LLM
+
+        # สร้าง prompt
         prompt = f"User question: {user_question}\n\nRelevant recommendations:\n"
         if recommendations:
             for i, rec in enumerate(recommendations, 1):
