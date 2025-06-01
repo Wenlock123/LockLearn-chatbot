@@ -7,6 +7,7 @@ import streamlit as st
 import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
+import re
 
 # ✅ ตั้งค่าหน้า Streamlit
 st.set_page_config(page_title="LockLearn Lifecoach", page_icon="🧠", layout="centered")
@@ -31,9 +32,7 @@ def query_llm_with_chat(prompt, api_key):
     }
     payload = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
+        "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
         "top_p": 0.9,
         "max_tokens": 512
@@ -57,6 +56,19 @@ def retrieve_recommendations(question_embedding, top_k=10):
         return results['documents'][0]
     return []
 
+# ✅ ตรวจว่าข้อความเป็นการปิดบทสนทนาไหม
+def is_closing_message(text):
+    closing_patterns = [
+        r"^ขอบคุณ.*", r"^ขอบใจ.*", r"^โอเค.*", r"^เข้าใจ.*", r"^ได้เลย.*", r"^รับทราบ.*",
+        r"^thank(s| you).*", r"^ok.*", r"^got it.*", r"^noted.*", r"^understood.*"
+    ]
+    text = text.strip().lower()
+    if len(text.split()) <= 5:
+        for pattern in closing_patterns:
+            if re.match(pattern, text):
+                return True
+    return False
+
 # ✅ สร้าง session state สำหรับเก็บประวัติแชท
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -71,33 +83,35 @@ for entry in st.session_state.chat_history:
 user_input = st.chat_input("Ask me anything about motivation, study, or self-growth...")
 
 if user_input:
-    # 🧠 บันทึกคำถามของผู้ใช้
+    # บันทึกคำถามของผู้ใช้
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # 🔍 สร้าง embedding และค้นหา RAG
-    with st.spinner("Thinking..."):
-        question_embedding = embedding_model.encode(user_input).tolist()
-        recommendations = retrieve_recommendations(question_embedding, top_k=10)
+    # เช็กว่าควรตอบหรือไม่
+    if is_closing_message(user_input):
+        reply = "😊 ยินดีเสมอครับ หากต้องการคำแนะนำเพิ่มเติมสามารถถามได้ตลอดเลยนะครับ!"
+    else:
+        # เรียก LLM พร้อม RAG
+        with st.spinner("Thinking..."):
+            question_embedding = embedding_model.encode(user_input).tolist()
+            recommendations = retrieve_recommendations(question_embedding, top_k=10)
 
-        prompt = f"Question: {user_input}\nRecommendations:\n"
-        for rec in recommendations:
-            prompt += f"- {rec}\n"
+            prompt = f"Question: {user_input}\nRecommendations:\n"
+            for rec in recommendations:
+                prompt += f"- {rec}\n"
 
-        prompt += """
-
+            prompt += """
 Please generate a supportive, practical, and encouraging response based on the suggestions above.
-Respond in the **same language** as the user's question:
+Respond in the same language as the user's question:
 - Thai if the question is in Thai.
 - English if the question is in English.
 
 Make your answer concise and natural, like a caring life coach giving motivation in just 2-3 sentences. Keep it positive and uplifting.
 """
+            reply = query_llm_with_chat(prompt, api_key)
 
-        answer = query_llm_with_chat(prompt, api_key)
-
-    # 🤖 บันทึกคำตอบ LLM
-    st.session_state.chat_history.append({"role": "assistant", "content": answer})
+    # แสดงคำตอบบอท
+    st.session_state.chat_history.append({"role": "assistant", "content": reply})
     with st.chat_message("assistant"):
-        st.markdown(answer)
+        st.markdown(reply)
