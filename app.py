@@ -119,24 +119,27 @@ if user_input:
             question_embedding = embedding_model.encode(user_input).tolist()
             recommendations = retrieve_recommendations(question_embedding, top_k=10)
 
-            prompt = f"Question: {user_input}\nRecommendations:\n"
+            prompt = f"""
+User message: "{user_input}"
+
+Step 1: Briefly analyze the user's feelings or situation based on the message above.
+Step 2: Using your analysis and the recommendations below, generate a supportive and practical response.
+
+Recommendations:
+"""
             for rec in recommendations:
                 prompt += f"- {rec}\n"
 
-            prompt += """
-Please generate a supportive, practical, and encouraging response based on the suggestions above.
-Respond in the same language as the user's question:
-- Thai if the question is in Thai.
-- English if the question is in English.
+            prompt += f"""
 
-If the user's question is in Thai, respond in a polite and feminine tone using "ค่ะ" at the end of the sentence, as if you are a female life coach giving kind, warm, and caring motivation.
-If the user's question is in English, keep a kind and uplifting tone like a supportive female life coach.
+Please respond in {'Thai' if lang == 'th' else 'English'} with a {'polite and warm tone, ending sentences with "ค่ะ"' if lang == 'th' else 'kind and uplifting tone like a supportive female life coach'}.
 
-Keep the response concise (1–2 sentences), natural, and motivating.
-
-Avoid repeating the user's exact words unnecessarily. Use varied phrases to sound more natural and warm.
+Your response should:
+- Reflect understanding of the user's feelings or situation.
+- Naturally incorporate relevant recommendations.
+- Avoid repeating the user's exact words or the recommendations verbatim.
+- Be concise (1–2 sentences) and encouraging.
 """
-
 
             reply = query_llm_with_chat(prompt, api_key)
 
