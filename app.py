@@ -1,5 +1,3 @@
-# app.py
-
 # --- แก้ปัญหา sqlite3 version สำหรับ Streamlit Cloud ---
 # TODO: ถ้ารันในเครื่อง localhost ให้ comment 3 บรรทัดนี้ออก
 __import__('pysqlite3')
@@ -11,11 +9,11 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 
-# ต้องตั้ง set_page_config เป็นคำสั่งแรกสุดหลัง import streamlit
+# ต้องตั้งค่าก่อนคำสั่งอื่นของ Streamlit
 st.set_page_config(page_title="LockLearn lifecoach", page_icon="🧠")
 
 # โหลดฐานข้อมูล ChromaDB
-db_path = "./chromadb_database_v2"  # เปลี่ยน path ตามจริงในระบบคุณ
+db_path = "./chromadb_database_v2"
 client = chromadb.PersistentClient(path=db_path)
 collection = client.get_collection(name="recommendations")
 
@@ -58,29 +56,39 @@ def query_llm_together_api(prompt, api_key):
 
 # --- UI ---
 st.title("🧠 LockLearn AI Chatbot")
+st.markdown("Ask about learning, motivation, or self-improvement. Get tailored, encouraging advice 💡")
 
-# ใช้ API key จาก secrets เท่านั้น (ปลอดภัยกว่า)
+# ใช้ API key จาก secrets เท่านั้น
 api_key = st.secrets["TOGETHER_API_KEY"]
 
-user_question = st.text_area("Ask me something about learning, motivation, or self-improvement:")
+user_question = st.text_area("💬 What would you like help with today?")
 
-if st.button("Ask") and user_question:
-    with st.spinner("Processing..."):
-        # สร้าง embedding
-        question_embedding = embedding_model.encode(user_question).tolist()
-        # ดึงคำแนะนำ
-        recommendations = retrieve_recommendations(question_embedding, top_k=3)
+if st.button("Ask"):
+    if not user_question.strip():
+        st.warning("⚠️ Please enter your question first.")
+    else:
+        with st.spinner("Processing..."):
+            # สร้าง embedding
+            question_embedding = embedding_model.encode(user_question).tolist()
+            # ดึงคำแนะนำ
+            recommendations = retrieve_recommendations(question_embedding, top_k=3)
 
-        # สร้าง prompt
-        prompt = f"User question: {user_question}\n\nRelevant recommendations:\n"
-        if recommendations:
-            for i, rec in enumerate(recommendations, 1):
-                prompt += f"{i}. {rec}\n"
-        else:
-            prompt += "No relevant recommendations found.\n"
-        prompt += "\nPlease answer the user question using the above recommendations with encouragement and advice."
+            # สร้าง prompt สำหรับ LLM
+            prompt = f"User question: {user_question}\n\nRelevant recommendations:\n"
+            if recommendations:
+                for i, rec in enumerate(recommendations, 1):
+                    prompt += f"{i}. {rec}\n"
+            else:
+                prompt += "No relevant recommendations found.\n"
+            prompt += "\nPlease answer the user question using the above recommendations with encouragement and advice."
 
-        # เรียก LLM ผ่าน Together API
-        answer = query_llm_together_api(prompt, api_key)
-        st.markdown("### 🤖 Answer:")
-        st.write(answer)
+            # เรียก LLM
+            answer = query_llm_together_api(prompt, api_key)
+
+            # แสดงผล
+            st.markdown("### 🤖 Answer:")
+            st.write(answer)
+
+# ปุ่ม clear
+if st.button("Clear"):
+    st.experimental_rerun()
