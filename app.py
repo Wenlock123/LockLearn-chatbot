@@ -129,8 +129,12 @@ Respond in the same language as the user's question:
 - Thai if the question is in Thai.
 - English if the question is in English.
 
-Make your answer concise and natural, like a caring life coach giving motivation in just 1–2 sentences. Keep it positive and uplifting.
+If the user's question is in Thai, respond in a polite and feminine tone using "ค่ะ" at the end of the sentence, as if you are a female life coach giving kind, warm, and caring motivation.
+If the user's question is in English, keep a kind and uplifting tone like a supportive female life coach.
+
+Keep the response concise (1–2 sentences), natural, and motivating.
 """
+
             reply = query_llm_with_chat(prompt, api_key)
 
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
