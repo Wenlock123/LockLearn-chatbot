@@ -1,5 +1,4 @@
-# --- แก้ปัญหา sqlite3 version สำหรับ Streamlit Cloud ---
-# TODO: ถ้ารันในเครื่อง localhost ให้ comment 3 บรรทัดนี้ออก
+# --- sqlite3 patch สำหรับ Streamlit Cloud ---
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -9,18 +8,21 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 
-# ตั้งค่าหน้า Streamlit
-st.set_page_config(page_title="LockLearn lifecoach", page_icon="🧠")
+# ✅ ตั้งค่าหน้า Streamlit
+st.set_page_config(page_title="LockLearn Lifecoach", page_icon="🧠", layout="centered")
 
-# โหลดฐานข้อมูล ChromaDB
+# ✅ โหลด ChromaDB
 db_path = "./chromadb_database_v2"
 client = chromadb.PersistentClient(path=db_path)
 collection = client.get_collection(name="recommendations")
 
-# โหลด embedding model
+# ✅ โหลด embedding model
 embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
 
-# 🔁 ฟังก์ชันเรียก LLM ผ่าน Together API (chat-completions style)
+# ✅ โหลด API Key
+api_key = st.secrets["TOGETHER_API_KEY"]
+
+# ✅ ฟังก์ชันเรียก LLM ผ่าน Together API (chat-completions)
 def query_llm_with_chat(prompt, api_key):
     url = "https://api.together.xyz/v1/chat/completions"
     headers = {
@@ -36,72 +38,66 @@ def query_llm_with_chat(prompt, api_key):
         "top_p": 0.9,
         "max_tokens": 512
     }
-
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
         if response.status_code == 200:
-            result = response.json()
-            return result["choices"][0]["message"]["content"].strip()
+            return response.json()["choices"][0]["message"]["content"].strip()
         else:
             return f"❌ API Error {response.status_code}: {response.text}"
     except Exception as e:
         return f"❌ Request failed: {e}"
 
-# 🔍 ดึงคำแนะนำจาก ChromaDB
-def retrieve_recommendations(question_embedding, top_k=3):
+# ✅ ดึงคำแนะนำ
+def retrieve_recommendations(question_embedding, top_k=10):
     results = collection.query(
         query_embeddings=[question_embedding],
         n_results=top_k
     )
-    if results and 'documents' in results and results['documents']:
+    if results and results.get('documents'):
         return results['documents'][0]
     return []
 
-# --- UI ---
-st.title("🧠 LockLearn AI Chatbot")
-st.markdown("Ask about learning, motivation, or self-improvement. Get tailored, encouraging advice 💡")
+# ✅ สร้าง session state สำหรับเก็บประวัติแชท
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-# ใช้ API key จาก secrets
-api_key = st.secrets["TOGETHER_API_KEY"]
+# ✅ แสดงประวัติแชท
+st.title("🧠 LockLearn Lifecoach")
+for entry in st.session_state.chat_history:
+    with st.chat_message(entry["role"]):
+        st.markdown(entry["content"])
 
-user_question = st.text_area("💬 What would you like help with today?")
+# ✅ ช่องพิมพ์ข้อความด้านล่าง
+user_input = st.chat_input("Ask me anything about motivation, study, or self-growth...")
 
-if st.button("Ask"):
-    if not user_question.strip():
-        st.warning("⚠️ Please enter your question first.")
-    else:
-        with st.spinner("Processing..."):
-            # สร้าง embedding
-            question_embedding = embedding_model.encode(user_question).tolist()
+if user_input:
+    # 🧠 บันทึกคำถามของผู้ใช้
+    st.session_state.chat_history.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-            # ดึงคำแนะนำจาก ChromaDB
-            recommendations = retrieve_recommendations(question_embedding, top_k=10)
+    # 🔍 สร้าง embedding และค้นหา RAG
+    with st.spinner("Thinking..."):
+        question_embedding = embedding_model.encode(user_input).tolist()
+        recommendations = retrieve_recommendations(question_embedding, top_k=10)
 
-            # สร้าง prompt แบบ life coach
-            prompt = (
-                f"Question: {user_question}\n"
-                f"Recommendations:\n"
-            )
-            for rec in recommendations:
-                prompt += f"- {rec}\n"
+        prompt = f"Question: {user_input}\nRecommendations:\n"
+        for rec in recommendations:
+            prompt += f"- {rec}\n"
 
-            prompt += """
+        prompt += """
 
 Please generate a supportive, practical, and encouraging response based on the suggestions above.
 Respond in the **same language** as the user's question:
 - Thai if the question is in Thai.
 - English if the question is in English.
 
-Make your answer concise and natural, like a caring life coach giving motivation in just 1-3 sentences. Keep it positive and uplifting.
+Make your answer concise and natural, like a caring life coach giving motivation in just 2-3 sentences. Keep it positive and uplifting.
 """
 
-            # เรียก LLM
-            answer = query_llm_with_chat(prompt, api_key)
+        answer = query_llm_with_chat(prompt, api_key)
 
-            # แสดงผลลัพธ์
-            st.markdown("### 🤖 Answer:")
-            st.write(answer)
-
-# ปุ่ม clear
-if st.button("Clear"):
-    st.experimental_rerun()
+    # 🤖 บันทึกคำตอบ LLM
+    st.session_state.chat_history.append({"role": "assistant", "content": answer})
+    with st.chat_message("assistant"):
+        st.markdown(answer)
