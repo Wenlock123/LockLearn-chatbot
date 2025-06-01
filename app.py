@@ -28,42 +28,41 @@ def retrieve_recommendations(question_embedding, top_k=3):
         query_embeddings=[question_embedding],
         n_results=top_k
     )
+    # results['documents'] เป็น list of list (เพราะรับ query หลายตัว)
+    # ดังนั้นดึงรายการแรกออก
     if results and 'documents' in results and len(results['documents']) > 0:
         return results['documents'][0]
     return []
 
-# ฟังก์ชันเรียกใช้ LLM ผ่าน Together API (เวอร์ชันใหม่)
+# ฟังก์ชันเรียกใช้ LLM ผ่าน Together API
 def query_llm_together_api(prompt, api_key):
-    url = "https://api.together.ai/v1/chat/completions"
+    url = "https://api.together.xyz/inference/meta-llama/llama-4-scout-17b-16e-instruct"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-        "messages": [
-            {"role": "system", "content": "You are a kind and encouraging life coach. Keep answers short, supportive, and motivational."},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 512,
-        "temperature": 0.7,
-        "top_p": 0.95
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 512,
+            "temperature": 0.7,
+            "top_p": 0.95,
+        }
     }
     response = requests.post(url, headers=headers, json=payload)
-
     if response.status_code == 200:
+        # ตรวจสอบ key ให้แน่ใจว่าโครงสร้าง response ถูกต้อง
         try:
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
+            return response.json()["output"]["choices"][0]["text"].strip()
         except Exception as e:
-            return f"❌ Error parsing response: {e}"
+            return f"Error parsing LLM response: {e}"
     else:
-        return f"❌ Failed to get response from LLM: Status {response.status_code} - {response.text[:300]}"
+        return f"❌ Failed to get response from LLM: {response.text}"
 
 # --- UI ---
 st.title("🧠 LockLearn AI Chatbot")
 
-# รับ API Key (หากไม่ได้ใช้ secrets)
+# ดึง Together API key จาก secrets (แนะนำเก็บใน secrets.yaml แทนใส่ใน UI)
 if "TOGETHER_API_KEY" in st.secrets:
     api_key = st.secrets["TOGETHER_API_KEY"]
 else:
@@ -75,22 +74,17 @@ if st.button("Ask") and api_key and user_question:
     with st.spinner("Processing..."):
         # สร้าง embedding
         question_embedding = embedding_model.encode(user_question).tolist()
-        
         # ดึงคำแนะนำ
         recommendations = retrieve_recommendations(question_embedding, top_k=3)
-
-        # สร้าง prompt สำหรับ LLM
-        prompt = (
-            "You are a life coach. Answer the user question clearly in 1–3 sentences "
-            "using the relevant recommendations below. Always give encouragement and positive advice.\n\n"
-            f"User question: {user_question}\n\nRelevant recommendations:\n"
-        )
+        
+        # สร้าง prompt ให้ LLM
+        prompt = f"User question: {user_question}\n\nRelevant recommendations:\n"
         if recommendations:
             for i, rec in enumerate(recommendations, 1):
                 prompt += f"{i}. {rec}\n"
         else:
             prompt += "No relevant recommendations found.\n"
-        prompt += "\nAnswer shortly and kindly:"
+        prompt += "\nPlease answer the user question using the above recommendations with encouragement and advice."
 
         # เรียก LLM ผ่าน Together API
         answer = query_llm_together_api(prompt, api_key)
