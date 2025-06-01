@@ -133,7 +133,10 @@ If the user's question is in Thai, respond in a polite and feminine tone using "
 If the user's question is in English, keep a kind and uplifting tone like a supportive female life coach.
 
 Keep the response concise (1–2 sentences), natural, and motivating.
+
+Avoid repeating the user's exact words unnecessarily. Use varied phrases to sound more natural and warm.
 """
+
 
             reply = query_llm_with_chat(prompt, api_key)
 
