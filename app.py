@@ -8,6 +8,8 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 import re
+from pythainlp.spell import correct
+from langdetect import detect
 
 # ✅ ตั้งค่าหน้า Streamlit
 st.set_page_config(page_title="LockLearn Lifecoach", page_icon="🧠", layout="centered")
@@ -69,20 +71,31 @@ def is_closing_message(text):
                 return True
     return False
 
-# ✅ ตรวจข้อความมั่วหรือพิมพ์ผิด
+# ✅ ตรวจสอบข้อความมั่ว (เช่น พิมพ์สระพยัญชนะมั่ว)
 def is_gibberish_or_typo(text):
-    text = text.strip()
-    if len(text) <= 2:
+    words = text.strip().split()
+    if len(words) == 0:
         return True
-    words = text.split()
-    if len(words) == 1 and not re.search(r'[a-zA-Zก-๙]', words[0]):
+    # ถ้ามีแต่ตัวอักษรไม่เป็นคำ
+    if len(text) < 4:
+        return True
+    thai_chars = sum(1 for ch in text if '\u0E00' <= ch <= '\u0E7F')
+    eng_chars = sum(1 for ch in text if ch.isalpha())
+    if thai_chars == 0 and eng_chars == 0:
         return True
     return False
 
-# ✅ ตรวจจับภาษา (ไทยหรืออังกฤษ)
-def detect_language(text):
-    thai_chars = re.findall(r'[\u0E00-\u0E7F]', text)
-    return "th" if len(thai_chars) / max(len(text), 1) > 0.3 else "en"
+# ✅ แก้ไขสะกดผิด (ใช้เฉพาะภาษาไทย)
+def autocorrect_text(text):
+    try:
+        lang = detect(text)
+        if lang == 'th':
+            corrected = ' '.join([correct(word) for word in text.split()])
+            return corrected
+        else:
+            return text
+    except:
+        return text
 
 # ✅ สร้าง session state สำหรับเก็บประวัติแชท
 if "chat_history" not in st.session_state:
@@ -98,28 +111,24 @@ for entry in st.session_state.chat_history:
 user_input = st.chat_input("Ask me anything about motivation, study, or self-growth...")
 
 if user_input:
+    lang = detect(user_input)
+
+    # บันทึกข้อความของผู้ใช้
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    lang = detect_language(user_input)
-
     if is_gibberish_or_typo(user_input):
-        reply = {
-            "th": "😅 ผมไม่แน่ใจว่าคุณหมายถึงอะไร ลองพิมพ์ใหม่อีกครั้งนะครับ",
-            "en": "😅 I'm not sure what you mean. Could you try rephrasing it?"
-        }[lang]
+        reply = "😅 ฉันไม่แน่ใจว่าคุณหมายถึงอะไร ลองพิมพ์ใหม่อีกครั้งนะคะ" if lang == "th" else "😅 I'm not sure what you meant. Could you please rephrase?"
     elif is_closing_message(user_input):
-        reply = {
-            "th": "😊 ยินดีเสมอครับ หากต้องการคำแนะนำเพิ่มเติมสามารถถามได้ตลอดเลยนะครับ!",
-            "en": "😊 You're always welcome! Feel free to ask if you need more support!"
-        }[lang]
+        reply = "😊 ยินดีเสมอนะคะ หากต้องการคำแนะนำเพิ่มเติมสามารถถามได้ตลอดเลยค่ะ!" if lang == "th" else "😊 You're always welcome! Feel free to ask me anything anytime!"
     else:
         with st.spinner("Thinking..."):
-            question_embedding = embedding_model.encode(user_input).tolist()
+            corrected_input = autocorrect_text(user_input)
+            question_embedding = embedding_model.encode(corrected_input).tolist()
             recommendations = retrieve_recommendations(question_embedding, top_k=10)
 
-            prompt = f"Question: {user_input}\nRecommendations:\n"
+            prompt = f"Question: {corrected_input}\nRecommendations:\n"
             for rec in recommendations:
                 prompt += f"- {rec}\n"
 
@@ -129,10 +138,14 @@ Respond in the same language as the user's question:
 - Thai if the question is in Thai.
 - English if the question is in English.
 
-Make your answer concise and natural, like a caring life coach giving motivation in just 2–3 sentences. Keep it positive and uplifting.
+Make your answer concise and natural, like a caring life coach giving motivation in just 2-3 sentences. Keep it positive and uplifting.
+
+If replying in Thai, please use polite female ending ("ค่ะ") to sound gentle and warm.
 """
+
             reply = query_llm_with_chat(prompt, api_key)
 
+    # บันทึกคำตอบ
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
     with st.chat_message("assistant"):
         st.markdown(reply)
