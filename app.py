@@ -69,6 +69,21 @@ def is_closing_message(text):
                 return True
     return False
 
+# ✅ ตรวจข้อความมั่วหรือพิมพ์ผิด
+def is_gibberish_or_typo(text):
+    text = text.strip()
+    if len(text) <= 2:
+        return True
+    words = text.split()
+    if len(words) == 1 and not re.search(r'[a-zA-Zก-๙]', words[0]):
+        return True
+    return False
+
+# ✅ ตรวจจับภาษา (ไทยหรืออังกฤษ)
+def detect_language(text):
+    thai_chars = re.findall(r'[\u0E00-\u0E7F]', text)
+    return "th" if len(thai_chars) / max(len(text), 1) > 0.3 else "en"
+
 # ✅ สร้าง session state สำหรับเก็บประวัติแชท
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -83,16 +98,23 @@ for entry in st.session_state.chat_history:
 user_input = st.chat_input("Ask me anything about motivation, study, or self-growth...")
 
 if user_input:
-    # บันทึกคำถามของผู้ใช้
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # เช็กว่าควรตอบหรือไม่
-    if is_closing_message(user_input):
-        reply = "😊 ยินดีเสมอครับ หากต้องการคำแนะนำเพิ่มเติมสามารถถามได้ตลอดเลยนะครับ!"
+    lang = detect_language(user_input)
+
+    if is_gibberish_or_typo(user_input):
+        reply = {
+            "th": "😅 ผมไม่แน่ใจว่าคุณหมายถึงอะไร ลองพิมพ์ใหม่อีกครั้งนะครับ",
+            "en": "😅 I'm not sure what you mean. Could you try rephrasing it?"
+        }[lang]
+    elif is_closing_message(user_input):
+        reply = {
+            "th": "😊 ยินดีเสมอครับ หากต้องการคำแนะนำเพิ่มเติมสามารถถามได้ตลอดเลยนะครับ!",
+            "en": "😊 You're always welcome! Feel free to ask if you need more support!"
+        }[lang]
     else:
-        # เรียก LLM พร้อม RAG
         with st.spinner("Thinking..."):
             question_embedding = embedding_model.encode(user_input).tolist()
             recommendations = retrieve_recommendations(question_embedding, top_k=10)
@@ -107,11 +129,10 @@ Respond in the same language as the user's question:
 - Thai if the question is in Thai.
 - English if the question is in English.
 
-Make your answer concise and natural, like a caring life coach giving motivation in just 2-3 sentences. Keep it positive and uplifting.
+Make your answer concise and natural, like a caring life coach giving motivation in just 2–3 sentences. Keep it positive and uplifting.
 """
             reply = query_llm_with_chat(prompt, api_key)
 
-    # แสดงคำตอบบอท
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
     with st.chat_message("assistant"):
         st.markdown(reply)
