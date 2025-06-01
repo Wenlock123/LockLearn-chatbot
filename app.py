@@ -89,7 +89,7 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 # ✅ แสดงประวัติแชท
-st.title("🧠 LockLearn Lifecoach")
+st.title("💖 LockLearn Lifecoach")
 for entry in st.session_state.chat_history:
     with st.chat_message(entry["role"]):
         st.markdown(entry["content"])
