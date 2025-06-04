@@ -1,7 +1,6 @@
-torch
-sentence-transformers
-chromadb
-protobuf==3.20.3
-requests
 streamlit
+chromadb
+sentence-transformers
+requests
+protobuf==3.20.3
 pysqlite3-binary==0.5.3.post1
