@@ -4,11 +4,21 @@ import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import streamlit as st
+import chromadb
+from sentence_transformers import SentenceTransformer
 import requests
 import re
 
 # ✅ ตั้งค่าหน้า Streamlit
 st.set_page_config(page_title="LockLearn Lifecoach", page_icon="💖", layout="centered")
+
+# ✅ โหลด ChromaDB
+db_path = "./chromadb_database_v2"
+client = chromadb.PersistentClient(path=db_path)
+collection = client.get_collection(name="recommendations")
+
+# ✅ โหลด embedding model
+embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
 
 # ✅ โหลด API Key
 api_key = st.secrets["TOGETHER_API_KEY"]
@@ -35,6 +45,16 @@ def query_llm_with_chat(prompt, api_key):
             return f"❌ API Error {response.status_code}: {response.text}"
     except Exception as e:
         return f"❌ Request failed: {e}"
+
+# ✅ ดึงคำแนะนำ
+def retrieve_recommendations(question_embedding, top_k=10):
+    results = collection.query(
+        query_embeddings=[question_embedding],
+        n_results=top_k
+    )
+    if results and results.get('documents'):
+        return results['documents'][0]
+    return []
 
 # ✅ ตรวจว่าข้อความเป็นการปิดบทสนทนาไหม
 def is_closing_message(text):
@@ -96,18 +116,31 @@ if user_input:
         }[lang]
     else:
         with st.spinner("Thinking..."):
-            prompt = f"""
-You are a friendly and supportive female life coach.
+            question_embedding = embedding_model.encode(user_input).tolist()
+            recommendations = retrieve_recommendations(question_embedding, top_k=10)
 
+            prompt = f"""
 User message: "{user_input}"
 
-Please respond in {'Thai' if lang == 'th' else 'English'} with a {'polite and warm tone, ending sentences with "ค่ะ"' if lang == 'th' else 'kind and uplifting tone like a life coach'}.
+Step 1: Briefly analyze the user's feelings or situation based on the message above.
+Step 2: Using your analysis and the recommendations below, generate a supportive and practical response.
+
+Recommendations:
+"""
+            for rec in recommendations:
+                prompt += f"- {rec}\n"
+
+            prompt += f"""
+
+Please respond in {'Thai' if lang == 'th' else 'English'} with a {'polite and warm tone, ending sentences with "ค่ะ"' if lang == 'th' else 'kind and uplifting tone like a supportive female life coach'}.
 
 Your response should:
-- Reflect empathy and encouragement
-- Be brief (1–2 sentences)
-- Avoid repeating the user's exact words
+- Reflect understanding of the user's feelings or situation.
+- Naturally incorporate relevant recommendations.
+- Avoid repeating the user's exact words or the recommendations verbatim.
+- Be concise (1–2 sentences) and encouraging.
 """
+
             reply = query_llm_with_chat(prompt, api_key)
 
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
