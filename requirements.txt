@@ -4,5 +4,4 @@ chromadb
 protobuf==3.20.3
 requests
 streamlit
-
-gdown
+pysqlite3-binary==0.5.3.post1
