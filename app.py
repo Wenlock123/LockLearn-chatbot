@@ -1,29 +1,39 @@
-# --- sqlite3 patch สำหรับ Streamlit Cloud ---
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
+import os
+import gdown
 import streamlit as st
 import chromadb
 from sentence_transformers import SentenceTransformer
 import requests
 import re
 
-# ✅ ตั้งค่าหน้า Streamlit
+# --- ดาวน์โหลดโฟลเดอร์ chromadb_database_v2 จาก Google Drive ถ้าโฟลเดอร์ยังไม่มี ---
+folder_id = "1-0htAA3XGLOb5qyi8e8Xoi_T8_D2sLDc"
+folder_path = "./chromadb_database_v2"
+
+if not os.path.exists(folder_path):
+    st.info("Downloading vector database from Google Drive... Please wait.")
+    gdown.download_folder(id=folder_id, quiet=False, use_cookies=False)
+    st.success("Download complete!")
+
+# --- sqlite3 patch สำหรับ Streamlit Cloud ---
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
+# --- ตั้งค่าหน้า Streamlit ---
 st.set_page_config(page_title="LockLearn Lifecoach", page_icon="💖", layout="centered")
 
-# ✅ โหลด ChromaDB
-db_path = "./chromadb_database_v2"
-client = chromadb.PersistentClient(path=db_path)
+# --- โหลด ChromaDB ---
+client = chromadb.PersistentClient(path=folder_path)
 collection = client.get_collection(name="recommendations")
 
-# ✅ โหลด embedding model
+# --- โหลด embedding model ---
 embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
 
-# ✅ โหลด API Key
+# --- โหลด API Key จาก Secrets ---
 api_key = st.secrets["TOGETHER_API_KEY"]
 
-# ✅ ฟังก์ชันเรียก LLM ผ่าน Together API (chat-completions)
+# --- ฟังก์ชันเรียก LLM ผ่าน Together API ---
 def query_llm_with_chat(prompt, api_key):
     url = "https://api.together.xyz/v1/chat/completions"
     headers = {
@@ -46,7 +56,7 @@ def query_llm_with_chat(prompt, api_key):
     except Exception as e:
         return f"❌ Request failed: {e}"
 
-# ✅ ดึงคำแนะนำ
+# --- ฟังก์ชันดึงคำแนะนำจาก ChromaDB ---
 def retrieve_recommendations(question_embedding, top_k=10):
     results = collection.query(
         query_embeddings=[question_embedding],
@@ -56,7 +66,7 @@ def retrieve_recommendations(question_embedding, top_k=10):
         return results['documents'][0]
     return []
 
-# ✅ ตรวจว่าข้อความเป็นการปิดบทสนทนาไหม
+# --- ฟังก์ชันตรวจว่าข้อความปิดบทสนทนาหรือไม่ ---
 def is_closing_message(text):
     closing_patterns = [
         r"^ขอบคุณ.*", r"^ขอบใจ.*", r"^โอเค.*", r"^เข้าใจ.*", r"^ได้เลย.*", r"^รับทราบ.*",
@@ -69,7 +79,7 @@ def is_closing_message(text):
                 return True
     return False
 
-# ✅ ตรวจข้อความมั่วหรือพิมพ์ผิด
+# --- ฟังก์ชันตรวจข้อความมั่วหรือพิมพ์ผิด ---
 def is_gibberish_or_typo(text):
     text = text.strip()
     if len(text) <= 2:
@@ -79,22 +89,22 @@ def is_gibberish_or_typo(text):
         return True
     return False
 
-# ✅ ตรวจจับภาษา (ไทยหรืออังกฤษ)
+# --- ฟังก์ชันตรวจจับภาษา ---
 def detect_language(text):
     thai_chars = re.findall(r'[\u0E00-\u0E7F]', text)
     return "th" if len(thai_chars) / max(len(text), 1) > 0.3 else "en"
 
-# ✅ สร้าง session state สำหรับเก็บประวัติแชท
+# --- สร้าง session state เก็บประวัติแชท ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# ✅ แสดงประวัติแชท
+# --- แสดงประวัติแชท ---
 st.title("💖 LockLearn Lifecoach")
 for entry in st.session_state.chat_history:
     with st.chat_message(entry["role"]):
         st.markdown(entry["content"])
 
-# ✅ ช่องพิมพ์ข้อความด้านล่าง
+# --- ช่องพิมพ์ข้อความ ---
 user_input = st.chat_input("How can I support you today? Feel free to ask me anything")
 
 if user_input:
